@@ -16,7 +16,7 @@ function DisplayWPAConfig(){
 
   foreach($known_return as $line) {
     if (preg_match('/network\s*=/', $line)) {
-      $network = array('visible' => false, 'configured' => true, 'connected' => false);
+      $network = array('visible' => false, 'configured' => true, 'connected' => false, 'enabled' => false);
     } elseif ($network !== null) {
       if (preg_match('/^\s*}\s*$/', $line)) {
         $networks[$ssid] = $network;
