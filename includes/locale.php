@@ -14,7 +14,7 @@
 *
 * Refer to: https://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.4
  */
-if (empty($_SESSION['locale'])) {
+if (empty($_SESSION['locale']) && strlen($_SERVER['HTTP_ACCEPT_LANGUAGE']) >= 2) {
   $lang = substr($_SERVER['HTTP_ACCEPT_LANGUAGE'], 0, 2);
   switch ($lang){
     case "de":
@@ -32,22 +32,44 @@ if (empty($_SESSION['locale'])) {
     case "sv":
       $locale = "sv_SE.UTF-8";
       break;
+    case "nl":
+      $locale = "nl_NL.UTF-8";
+      break;
+    case "zh":
+      $locale = "zh_CN.UTF-8";
+      break;
+    case "cs":
+      $locale = "cs_CZ.UTF-8";
+      break;
+    case "ru":
+      $locale = "ru_RU.UTF-8";
+      break;
+    case "es":
+      $locale = "es_MX.UTF-8";
+      break;
+    case "fi":
+      $locale = "fi_FI.UTF-8";
+      break;
+    case "si":
+      $locale = "si_LK.UTF-8";
+      break;
     default:  
       $locale = "en_GB.UTF-8";
       break;
   }
+
   $_SESSION['locale'] = $locale; 
 }
 
 // Note: the associated locale must be installed on the RPi 
 // Use: 'sudo raspi-configure' and select 'Localisation Options' 
 
-// activate the locale setting                                                                                                                                                            
-putenv("LANG=" . $_SESSION['locale']);                                                                                                                                                                
-setlocale(LC_ALL, $_SESSION['locale']);                                                                                                                                                               
-                                                                                                                                                                                          
-bindtextdomain(LOCALE_DOMAIN, LOCALE_ROOT);                                                                                                                                                    
-bind_textdomain_codeset(LOCALE_DOMAIN, 'UTF-8');                                                                                                                                                
-                                                                                                                                                                                          
-textdomain(LOCALE_DOMAIN);                                                                                                                                                                      
-?>
+// activate the locale setting
+putenv("LANG=" . $_SESSION['locale']);
+setlocale(LC_ALL, $_SESSION['locale']);
+
+bindtextdomain(LOCALE_DOMAIN, LOCALE_ROOT);
+bind_textdomain_codeset(LOCALE_DOMAIN, 'UTF-8');
+
+textdomain(LOCALE_DOMAIN);
+

@@ -12,16 +12,52 @@ function DisplayDHCPConfig() {
   $status = new StatusMessages();
   if( isset( $_POST['savedhcpdsettings'] ) ) {
     if (CSRFValidate()) {
-      $config = 'interface='.$_POST['interface'].PHP_EOL
-        .'dhcp-range='.$_POST['RangeStart'].','.$_POST['RangeEnd'].',255.255.255.0,'.$_POST['RangeLeaseTime'].''.$_POST['RangeLeaseTimeUnits'];
-      exec( 'echo "'.$config.'" > /tmp/dhcpddata',$temp );
-      system( 'sudo cp /tmp/dhcpddata '. RASPI_DNSMASQ_CONFIG, $return );
+        $errors = '';
+        define('IFNAMSIZ', 16);
+        if (!preg_match('/^[a-zA-Z0-9]+$/', $_POST['interface']) ||
+            strlen($_POST['interface']) >= IFNAMSIZ) {
+            $errors .= _('Invalid interface name.').'<br />'.PHP_EOL;
+        }
 
-      if( $return == 0 ) {
-        $status->addMessage('Dnsmasq configuration updated successfully', 'success');
-      } else {
-        $status->addMessage('Dnsmasq configuration failed to be updated', 'danger');
-      }
+        if (!preg_match('/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\z/', $_POST['RangeStart']) &&
+            !empty($_POST['RangeStart'])) {  // allow ''/null ?
+            $errors .= _('Invalid DHCP range start.').'<br />'.PHP_EOL;
+        }
+
+        if (!preg_match('/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\z/', $_POST['RangeEnd']) &&
+            !empty($_POST['RangeEnd'])) {  // allow ''/null ?
+            $errors .= _('Invalid DHCP range end.').'<br />'.PHP_EOL;
+        }
+
+        if (!ctype_digit($_POST['RangeLeaseTime']) && $_POST['RangeLeaseTimeUnits'] !== 'infinite') {
+            $errors .= _('Invalid DHCP lease time, not a number.').'<br />'.PHP_EOL;
+        }
+
+        if (!in_array($_POST['RangeLeaseTimeUnits'], array('m', 'h', 'd', 'infinite'))) {
+            $errors .= _('Unknown DHCP lease time unit.').'<br />'.PHP_EOL;
+        }
+
+        $return = 1;
+        if (empty($errors)) {
+            $config = 'interface='.$_POST['interface'].PHP_EOL.
+                      'dhcp-range='.$_POST['RangeStart'].','.$_POST['RangeEnd'].
+                      ',255.255.255.0,';
+            if ($_POST['RangeLeaseTimeUnits'] !== 'infinite') {
+                $config .= $_POST['RangeLeaseTime'];
+            }
+
+            $config .= $_POST['RangeLeaseTimeUnits'];
+            exec('echo "'.$config.'" > /tmp/dhcpddata', $temp);
+            system('sudo cp /tmp/dhcpddata '.RASPI_DNSMASQ_CONFIG, $return);
+        } else {
+            $status->addMessage($errors, 'danger');
+        }
+
+        if ($return == 0) {
+            $status->addMessage('Dnsmasq configuration updated successfully', 'success');
+        } else {
+            $status->addMessage('Dnsmasq configuration failed to be updated.', 'danger');
+        }
     } else {
       error_log('CSRF violation');
     }
@@ -76,25 +112,30 @@ function DisplayDHCPConfig() {
   $RangeStart = $arrRange[0];
   $RangeEnd = $arrRange[1];
   $RangeMask = $arrRange[2];
-  preg_match( '/([0-9]*)([a-z])/i', $arrRange[3], $arrRangeLeaseTime );
+  $leaseTime = $arrRange[3];
 
   $hselected = '';
   $mselected = '';
   $dselected = '';
-
-  switch( $arrRangeLeaseTime[2] ) {
-    case "h":
-      $hselected = " selected";
-    break;
-    case "m":
-      $mselected = " selected";
-    break;
-    case "d":
-      $dselected = " selected";
-    break;
+  $infiniteselected = '';
+  preg_match( '/([0-9]*)([a-z])/i', $leaseTime, $arrRangeLeaseTime );
+  if ($leaseTime === 'infinite') {
+    $infiniteselected = ' selected="selected"';
+  } else {
+    switch( $arrRangeLeaseTime[2] ) {
+      case 'h':
+        $hselected = ' selected="selected"';
+        break;
+      case 'm':
+        $mselected = ' selected="selected"';
+        break;
+      case 'd':
+        $dselected = ' selected="selected"';
+        break;
+    }
   }
 
-  ?>
+?>
   <div class="row">
   <div class="col-lg-12">
       <div class="panel panel-primary">
@@ -119,42 +160,49 @@ function DisplayDHCPConfig() {
       <div class="form-group col-md-4">
         <label for="code">Interface</label>
         <select class="form-control" name="interface">
-        <?php 
+<?php 
         exec("ip -o link show | awk -F': ' '{print $2}'", $interfaces);
 
-        foreach( $interfaces as $int ) {
+        foreach( $interfaces as $inet ) {
           $select = '';
-          if( $int == $conf['interface'] ) {
-            $select = " selected";
+          if( $inet === $conf['interface'] ) {
+            $select = ' selected="selected"';
           }
-            echo '<option value="'.$int.'"'.$select.'>'.$int.'</option>';
-          }
-        ?>
+
+          echo '        <option value="'.htmlspecialchars($inet, ENT_QUOTES).'"'.
+                $select.'>'.htmlspecialchars($inet, ENT_QUOTES).'</option>' , PHP_EOL;
+        }
+?>
         </select>
       </div>
     </div>
     <div class="row">
       <div class="form-group col-md-4">
         <label for="code"><?php echo _("Starting IP Address"); ?></label>
-        <input type="text" class="form-control"name="RangeStart" value="<?php echo $RangeStart; ?>" />
+        <input type="text" class="form-control"name="RangeStart" value="<?php echo htmlspecialchars($RangeStart, ENT_QUOTES); ?>" />
       </div>
     </div>
 
     <div class="row">
       <div class="form-group col-md-4">
         <label for="code"><?php echo _("Ending IP Address"); ?></label>
-        <input type="text" class="form-control" name="RangeEnd" value="<?php echo $RangeEnd; ?>" />
+        <input type="text" class="form-control" name="RangeEnd" value="<?php echo htmlspecialchars($RangeEnd, ENT_QUOTES); ?>" />
       </div>
     </div>
 
     <div class="row">
       <div class="form-group col-xs-2 col-sm-2">
         <label for="code"><?php echo _("Lease Time"); ?></label>
-        <input type="text" class="form-control" name="RangeLeaseTime" value="<?php echo $arrRangeLeaseTime[1]; ?>" />
+        <input type="text" class="form-control" name="RangeLeaseTime" value="<?php echo htmlspecialchars($arrRangeLeaseTime[1], ENT_QUOTES); ?>" />
       </div>
       <div class="col-xs-2 col-sm-2">
         <label for="code"><?php echo _("Interval"); ?></label>
-        <select name="RangeLeaseTimeUnits" class="form-control" ><option value="m" <?php echo $mselected; ?>>Minute(s)</option><option value="h" <?php echo $hselected; ?>>Hour(s)</option><option value="d" <?php echo $dselected; ?>>Day(s)</option><option value="infinite">Infinite</option></select> 
+        <select name="RangeLeaseTimeUnits" class="form-control" >
+          <option value="m"<?php echo $mselected; ?>><?php echo _("Minute(s)"); ?></option>
+          <option value="h"<?php echo $hselected; ?>><?php echo _("Hour(s)"); ?></option>
+          <option value="d"<?php echo $dselected; ?>><?php echo _("Day(s)"); ?></option>
+          <option value="infinite"<?php echo $infiniteselected; ?>><?php echo _("Infinite"); ?></option>
+        </select> 
       </div>
     </div>
 
@@ -166,7 +214,7 @@ function DisplayDHCPConfig() {
     } else {
       echo'<input type="submit" class="btn btn-success" value="' .  _("Start dnsmasq") . '" name="startdhcpd" />';
     }
-    ?>
+?>
     </form>
     </div><!-- /.tab-pane -->
 
@@ -189,18 +237,17 @@ function DisplayDHCPConfig() {
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <?php
-                exec( 'cat ' . RASPI_DNSMASQ_LEASES, $leases );
-                foreach( $leases as $lease ) {
-                  $lease_items = explode(' ', $lease);
-                  foreach( $lease_items as $lease_item ) {
-                    echo '<td>' . $lease_item . '</td>';
-                  }
-                  echo '</tr>';
-                };
-                ?>
-              </tr>
+<?php
+exec( 'cat ' . RASPI_DNSMASQ_LEASES, $leases );
+foreach( $leases as $lease ) {
+    echo '              <tr>'.PHP_EOL;
+    $lease_items = explode(' ', $lease);
+    foreach( $lease_items as $lease_item ) {
+        echo '                <td>'.htmlspecialchars($lease_item, ENT_QUOTES).'</td>'.PHP_EOL;
+    }
+    echo '              </tr>'.PHP_EOL;
+};
+?>
             </tbody>
           </table>
         </div><!-- /.table-responsive -->
@@ -210,12 +257,10 @@ function DisplayDHCPConfig() {
     </div><!-- /.tab-pane -->
     </div><!-- /.tab-content -->
     </div><!-- ./ Panel body -->
-    <div class="panel-footer"> <?php echo _("Information provided by Dnsmasq");?></div>
+    <div class="panel-footer"> <?php echo _("Information provided by Dnsmasq"); ?></div>
         </div><!-- /.panel-primary -->
     </div><!-- /.col-lg-12 -->
   </div><!-- /.row -->
 <?php
 }
-
-?>
 

@@ -33,6 +33,8 @@ include_once( 'includes/system.php' );
 include_once( 'includes/configure_client.php' );
 include_once( 'includes/networking.php' );
 include_once( 'includes/themes.php' );
+include_once( 'includes/data_usage.php' );
+include_once( 'includes/about.php' );
 
 $output = $return = 0;
 $page = $_GET['page'];
@@ -51,10 +53,10 @@ if(!isset($_COOKIE['theme'])) {
 } else {
     $theme = $_COOKIE['theme'];
 }
-$theme_url = 'dist/css/' . $theme;
-?>
 
-<!DOCTYPE html>
+$theme_url = 'dist/css/'.htmlspecialchars($theme, ENT_QUOTES);
+
+?><!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="utf-8">
@@ -117,9 +119,11 @@ $theme_url = 'dist/css/' . $theme;
               <li>
                 <a href="index.php?page=wlan0_info"><i class="fa fa-dashboard fa-fw"></i> <?php echo _("Dashboard"); ?></a>
               </li>
+	      <?php if ( RASPI_WIFICLIENT_ENABLED ) : ?>
               <li>
-                <a href="index.php?page=wpa_conf"><i class="fa fa-signal fa-fw"></i> <?php echo _("Configure WiFi client"); ?></a>
-              </li>
+                <a href="index.php?page=wpa_conf"><i class="fa fa-wifi fa-fw"></i> <?php echo _("Configure WiFi client"); ?></a>
+	      </li>
+              <?php endif; ?>
               <?php if ( RASPI_HOTSPOT_ENABLED ) : ?>
               <li>
                 <a href="index.php?page=hostapd_conf"><i class="fa fa-dot-circle-o fa-fw"></i> <?php echo _("Configure hotspot"); ?></a>
@@ -155,10 +159,18 @@ $theme_url = 'dist/css/' . $theme;
                 <a href="index.php?page=theme_conf"><i class="fa fa-wrench fa-fw"></i> <?php echo _("Change Theme"); ?></a>
               </li>
               <?php endif; ?>
+              <?php if ( RASPI_VNSTAT_ENABLED ) : ?>
+              <li>
+                <a href="index.php?page=data_use"><i class="fa fa-bar-chart fa-fw"></i> <?php echo _("Data usage"); ?></a>
+              </li>
+              <?php endif; ?>
               <li>
                 <a href="index.php?page=system_info"><i class="fa fa-cube fa-fw"></i> <?php echo _("System"); ?></a>
               </li>
-            </ul>
+               <li>
+                <a href="index.php?page=about"><i class="fa fa-info-circle fa-fw"></i> <?php echo _("About RaspAP"); ?></a>
+              </li>
+           </ul>
           </div><!-- /.navbar-collapse -->
         </div><!-- /.navbar-default -->
       </nav>
@@ -175,6 +187,7 @@ $theme_url = 'dist/css/' . $theme;
         </div><!-- /.row -->
 
         <?php 
+$extraFooterScripts = array();
         // handle page actions
         switch( $page ) {
           case "wlan0_info":
@@ -207,13 +220,20 @@ $theme_url = 'dist/css/' . $theme;
           case "theme_conf":
             DisplayThemeConfig();
             break;
+          case "data_use":
+            DisplayDataUsage($extraFooterScripts);
+            break;
           case "system_info":
             DisplaySystem();
+            break;
+           case "about":
+            DisplayAbout();
             break;
           default:
             DisplayDashboard();
         }
-        ?>
+
+?>
       </div><!-- /#page-wrapper --> 
     </div><!-- /#wrapper -->
 
@@ -229,15 +249,24 @@ $theme_url = 'dist/css/' . $theme;
     <!-- Metis Menu Plugin JavaScript -->
     <script src="vendor/metisMenu/metisMenu.min.js"></script>
 
-    <!-- Morris Charts JavaScript -->
-    <!--script src="vendor/raphael/raphael-min.js"></script-->
-    <!--script src="vendor/morrisjs/morris.min.js"></script-->
-    <!--script src="js/morris-data.js"></script-->
-
     <!-- Custom Theme JavaScript -->
     <script src="dist/js/sb-admin-2.js"></script>
 
     <!-- Custom RaspAP JS -->
     <script src="js/custom.js"></script>
+
+<?php
+// Load non default JS/ECMAScript in footer.
+foreach ($extraFooterScripts as $script) {
+    echo '    <script type="text/javascript" src="' , $script['src'] , '"';
+    if ($script['defer']) {
+        echo ' defer="defer"';
+    }
+
+    // if ($script['async']) { echo ( echo ' defer="async"'; ), intrigity=, nonce=  etc. etc.
+    echo '></script>' , PHP_EOL;
+}
+
+?>
   </body>
 </html>

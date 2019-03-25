@@ -6,22 +6,21 @@ include_once( 'includes/status_messages.php' );
 *
 *
 */
-function DisplayHostAPDConfig(){
-
+function DisplayHostAPDConfig()
+{
   $status = new StatusMessages();
 
   $arrHostapdConf = parse_ini_file('/etc/raspap/hostapd.ini');
 
   $arrConfig = array();
-  $arrChannel = array('a','b','g');
-  $arrSecurity = array( 1 => 'WPA', 2 => 'WPA2',3=> 'WPA+WPA2');
+  $arr80211Standard = array('a','b','g','n');
+  $arrSecurity = array(1 => 'WPA', 2 => 'WPA2', 3 => 'WPA+WPA2', 'none' => _("None"));
   $arrEncType = array('TKIP' => 'TKIP', 'CCMP' => 'CCMP', 'TKIP CCMP' => 'TKIP+CCMP');
   exec("ip -o link show | awk -F': ' '{print $2}'", $interfaces);
 
-
   if( isset($_POST['SaveHostAPDSettings']) ) {
     if (CSRFValidate()) {
-      SaveHostAPDConfig($arrSecurity, $arrEncType, $arrChannel, $interfaces, $status);
+      SaveHostAPDConfig($arrSecurity, $arrEncType, $arr80211Standard, $interfaces, $status);
     } else {
       error_log('CSRF violation');
     }
@@ -47,7 +46,7 @@ function DisplayHostAPDConfig(){
     }
   }
 
-  exec( 'cat '. RASPI_HOSTAPD_CONFIG, $return );
+  exec( 'cat '. RASPI_HOSTAPD_CONFIG, $hostapdconfig );
   exec( 'pidof hostapd | wc -l', $hostapdstatus);
 
   if( $hostapdstatus[0] == 0 ) {
@@ -56,13 +55,18 @@ function DisplayHostAPDConfig(){
     $status->addMessage('HostAPD is running', 'success');
   }
 
-  foreach( $return as $a ) {
-    if( $a[0] != "#" ) {
-      $arrLine = explode( "=",$a) ;
+  foreach( $hostapdconfig as $hostapdconfigline ) {
+    if (strlen($hostapdconfigline) === 0) {
+      continue;
+    }
+
+    if ($hostapdconfigline[0] != "#" ) {
+      $arrLine = explode("=", $hostapdconfigline) ;
       $arrConfig[$arrLine[0]]=$arrLine[1];
     }
   };
-  ?>
+
+?>
   <div class="row">
     <div class="col-lg-12">
       <div class="panel panel-primary">
@@ -87,28 +91,55 @@ function DisplayHostAPDConfig(){
                 <?php CSRFToken() ?>
                 <div class="row">
                   <div class="form-group col-md-4">
-                    <label for="code"><?php echo _("Interface") ;?></label>
+                    <label for="cbxinterface"><?php echo _("Interface") ;?></label>
                     <?php
-                      SelectorOptions('interface', $interfaces, $arrConfig['interface']);
+                      SelectorOptions('interface', $interfaces, $arrConfig['interface'], 'cbxinterface');
                     ?>
                   </div>
                 </div>
                 <div class="row">
                   <div class="form-group col-md-4">
-                    <label for="code"><?php echo _("SSID"); ?></label>
-                    <input type="text" class="form-control" name="ssid" value="<?php echo $arrConfig['ssid']; ?>" />
+                    <label for="txtssid"><?php echo _("SSID"); ?></label>
+                    <input type="text" id="txtssid" class="form-control" name="ssid" value="<?php echo htmlspecialchars($arrConfig['ssid'], ENT_QUOTES); ?>" />
                   </div>
                 </div>
                 <div class="row">
                   <div class="form-group col-md-4">
-                    <label for="code"><?php echo _("Wireless Mode") ;?></label>
-                    <?php SelectorOptions('hw_mode', $arrChannel, $arrConfig['hw_mode']); ?>
+                    <label for="cbxhwmode"><?php echo _("Wireless Mode") ;?></label>
+                    <?php
+$selectedHwMode = $arrConfig['hw_mode'];
+if (isset($arrConfig['ieee80211n'])) {
+    if (strval($arrConfig['ieee80211n']) === '1') {
+        $selectedHwMode = 'n';
+    }
+}
+
+SelectorOptions('hw_mode', $arr80211Standard, $selectedHwMode, 'cbxhwmode'); ?>
                   </div>
                 </div>
                 <div class="row">
                   <div class="form-group col-md-4">
-                    <label for="code"><?php echo _("Channel"); ?></label>
-                    <?php SelectorOptions('channel', range(1, 14), intval($arrConfig['channel'])) ?>
+                    <label for="cbxchannel"><?php echo _("Channel"); ?></label>
+                    <?php
+$selectablechannels = range(1, 13);
+$countries_2_4Ghz_max11ch = array('AG', 'BS', 'BB', 'BZ', 'CR', 'CU', 'DM', 'DO', 'SV', 'GD', 'GT',
+                                 'HT', 'HN', 'JM', 'MX', 'NI', 'PA', 'KN', 'LC', 'VC', 'TT',
+                                 'US', 'CA', 'UZ', 'CO');
+$countries_2_4Ghz_max14ch = array('JA');
+if (in_array($arrConfig['country_code'], $countries_max11channels)) {
+    // In North America till channel 11 is the maximum allowed wi-fi 2.4Ghz channel.
+    // Except for the US that allows channel 12 & 13 in low power mode with additional restrictions.
+    // Canada that allows channel 12 in low power mode. Because it's unsure if low powered mode
+    // can be supported the channels are not selectable for those countries.
+    // source: https://en.wikipedia.org/wiki/List_of_WLAN_channels#Interference_concerns
+    // Also Uzbekistan and Colombia allow to select till channel 11 as maximum channel on the 2.4Ghz wi-fi band.
+    $selectablechannels = range(1, 11);
+} elseif (in_array($arrConfig['country_code'], $countries_2_4Ghz_max14ch)) {
+    if ($arrConfig['hw_mode'] === 'b') {
+        $selectablechannels = range(1, 14);
+    }
+}
+                    SelectorOptions('channel', $selectablechannels, intval($arrConfig['channel']), 'cbxchannel'); ?>
                   </div>
                 </div>
               </div>
@@ -116,20 +147,20 @@ function DisplayHostAPDConfig(){
                 <h4><?php echo _("Security settings"); ?></h4>
                 <div class="row">
                   <div class="form-group col-md-4">
-                    <label for="code"><?php echo _("Security type"); ?></label>
-                    <?php SelectorOptions('wpa', $arrSecurity, $arrConfig['wpa']); ?>
+                    <label for="cbxwpa"><?php echo _("Security type"); ?></label>
+                    <?php SelectorOptions('wpa', $arrSecurity, $arrConfig['wpa'], 'cbxwpa'); ?>
                   </div>
                 </div>
                 <div class="row">
                   <div class="form-group col-md-4">
-                    <label for="code"><?php echo _("Encryption Type"); ?></label>
-                    <?php SelectorOptions('wpa_pairwise', $arrEncType, $arrConfig['wpa_pairwise']); ?>
+                    <label for="cbxwpapairwise"><?php echo _("Encryption Type"); ?></label>
+                    <?php SelectorOptions('wpa_pairwise', $arrEncType, $arrConfig['wpa_pairwise'], 'cbxwpapairwise'); ?>
                   </div>
                 </div>
                 <div class="row">
                   <div class="form-group col-md-4">
-                    <label for="code"><?php echo _("PSK"); ?></label>
-                    <input type="text" class="form-control" name="wpa_passphrase" value="<?php echo $arrConfig['wpa_passphrase'] ?>" />
+                    <label for="txtwpapassphrase"><?php echo _("PSK"); ?></label>
+                    <input type="text" class="form-control" id="txtwpapassphrase" name="wpa_passphrase" value="<?php echo htmlspecialchars($arrConfig['wpa_passphrase'], ENT_QUOTES); ?>" />
                   </div>
                 </div>
               </div>
@@ -140,7 +171,7 @@ function DisplayHostAPDConfig(){
                       <?php
                           if($arrHostapdConf['LogEnable'] == 1) {
                               $log = file_get_contents('/tmp/hostapd.log');
-                              echo '<br /><textarea class="logoutput">'.$log.'</textarea>';
+                              echo '<br /><textarea class="logoutput">'.htmlspecialchars($log, ENT_QUOTES).'</textarea>';
                           } else {
                               echo "<br />Logfile output not enabled";
                           }
@@ -152,19 +183,38 @@ function DisplayHostAPDConfig(){
                 <h4><?php echo _("Advanced settings"); ?></h4>
                 <div class="row">
                   <div class="col-md-4">
-                  <div class="form-check">
-                    <label class="form-check-label">
-			<?php echo _("Enable logging"); ?> <?php $checked = ''; if($arrHostapdConf['LogEnable'] == 1) { $checked = 'checked'; } ?>
-                        <input id="logEnable" name ="logEnable" type="checkbox" class="form-check-input" value="1" <?php echo $checked; ?> />
-                    </label>
+                    <div class="form-check">
+                      <label class="form-check-label" for="chxlogenable"><?php echo _("Enable logging");
+$checkedLogEnabled = ''; 
+if ($arrHostapdConf['LogEnable'] == 1) {
+    $checkedLogEnabled = ' checked="checked"';
+}
+
+?>
+                      </label>
+                      <input id="chxlogenable" name="logEnable" type="checkbox" class="form-check-input" value="1"<?php echo $checkedLogEnabled; ?> />
+                    </div>
                   </div>
+                </div>
+                <div class="row">
+                  <div class="col-md-4">
+                    <div class="form-check">
+                      <label class="form-check-label" for="chxhiddenssid"><?php echo _("Hide SSID in broadcast");
+$checkedHiddenSSID = ''; 
+if ($arrConfig['ignore_broadcast_ssid'] == 1 || $arrConfig['ignore_broadcast_ssid'] == 2) {
+    $checkedHiddenSSID = ' checked="checked"';
+}
+
+?> </label>
+                      <input id="chxhiddenssid" name="hiddenSSID" type="checkbox" class="form-check-input" value="1"<?php echo $checkedHiddenSSID; ?> />
+                    </div>
                   </div>
                 </div>
                 <div class="row">
                   <div class="form-group col-md-4">
-                  <label for="code"><?php echo _("Country Code"); ?></label>
-                  <input type="hidden" id="selected_country" value="<?php echo $arrConfig['country_code'] ?>">
-                  <select  class="form-control"  id="countries" name="country_code">
+                  <label for="cbxcountries"><?php echo _("Country Code"); ?></label>
+                  <input type="hidden" id="selected_country" value="<?php echo htmlspecialchars($arrConfig['country_code'], ENT_QUOTES); ?>">
+                  <select  class="form-control" id="cbxcountries" name="country_code">
                     <option value="AF">Afghanistan</option>
                     <option value="AX">Åland Islands</option>
                     <option value="AL">Albania</option>
@@ -414,29 +464,30 @@ function DisplayHostAPDConfig(){
                     <option value="YE">Yemen</option>
                     <option value="ZM">Zambia</option>
                     <option value="ZW">Zimbabwe</option>
-        	  </select>
-        	  <script>       
-		    country = document.getElementById("selected_country").value;
-		    countries = document.getElementById("countries");
-		    ops = countries.getElementsByTagName("option");
-		      for(i = 0;i < ops.length; i++) {
-			if(ops[i].value == country){
-			  ops[i].selected=true;
-			  break;
-			}
-		      }
-		  </script>
+                  </select>
+<script type="text/javascript">
+var country = document.getElementById("selected_country").value;
+var countries = document.getElementById("cbxcountries");
+var ops = countries.getElementsByTagName("option");
+for (var i = 0; i < ops.length; ++i) {
+	if(ops[i].value == country){
+		ops[i].selected=true;
+		break;
+	}
+}
+
+</script>
                 </div>
               </div><!-- /.panel-body -->
             </div><!-- /.panel-primary -->
             <input type="submit" class="btn btn-outline btn-primary" name="SaveHostAPDSettings" value="<?php echo _("Save settings"); ?>" />
             <?php
               if($hostapdstatus[0] == 0) {
-                echo '<input type="submit" class="btn btn-success" name="StartHotspot" value="' . _("Start hotspot") . '"/>';
+                echo '<input type="submit" class="btn btn-success" name="StartHotspot" value="' . _("Start hotspot") . '"/>' , PHP_EOL;
               } else {
-                echo '<input type="submit" class="btn btn-warning" name="StopHotspot" value="' . _("Stop hotspot") . '"/>';
+                echo '<input type="submit" class="btn btn-warning" name="StopHotspot" value="' . _("Stop hotspot") . '"/>' , PHP_EOL;
               };
-            ?>
+?>
           </form>
         </div></div><!-- /.panel-primary -->
       <div class="panel-footer"> <?php echo _("Information provided by hostapd"); ?></div>
@@ -448,11 +499,19 @@ function DisplayHostAPDConfig(){
 function SaveHostAPDConfig($wpa_array, $enc_types, $modes, $interfaces, $status) {
   // It should not be possible to send bad data for these fields so clearly
   // someone is up to something if they fail. Fail silently.
-  if (!(array_key_exists($_POST['wpa'], $wpa_array) && array_key_exists($_POST['wpa_pairwise'], $enc_types) && in_array($_POST['hw_mode'], $modes))) {
-    error_log("Attempting to set hostapd config with wpa='".$_POST['wpa']."', wpa_pairwise='".$_POST['wpa_pairwise']."' and hw_mode='".$_POST['hw_mode']."'");
+  if (!(array_key_exists($_POST['wpa'], $wpa_array) &&
+      array_key_exists($_POST['wpa_pairwise'], $enc_types) &&
+      in_array($_POST['hw_mode'], $modes))) {
+    error_log("Attempting to set hostapd config with wpa='".$_POST['wpa']."', wpa_pairwise='".$_POST['wpa_pairwise']."' and hw_mode='".$_POST['hw_mode']."'");  // FIXME: log injection
     return false;
   }
-  if ((!filter_var($_POST['channel'], FILTER_VALIDATE_INT)) || intval($_POST['channel']) < 1 || intval($_POST['channel']) > 14) {
+
+  if (!filter_var($_POST['channel'], FILTER_VALIDATE_INT)) {
+    error_log("Attempting to set channel to invalid number.");
+    return false;
+  }
+
+  if (intval($_POST['channel']) < 1 || intval($_POST['channel']) > 14) {
     error_log("Attempting to set channel to '".$_POST['channel']."'");
     return false;
   }
@@ -477,25 +536,44 @@ function SaveHostAPDConfig($wpa_array, $enc_types, $modes, $interfaces, $status)
             exec('sudo /etc/raspap/hostapd/disablelog.sh');
         }
     }
+
     write_php_ini(["LogEnable" => $logEnable],'/etc/raspap/hostapd.ini');
 
   // Verify input
-  if (strlen($_POST['ssid']) == 0 || strlen($_POST['ssid']) > 32) {
+  if (empty($_POST['ssid']) || strlen($_POST['ssid']) > 32) {
     // Not sure of all the restrictions of SSID
     $status->addMessage('SSID must be between 1 and 32 characters', 'danger');
     $good_input = false;
   }
-  if (strlen($_POST['wpa_passphrase']) < 8 || strlen($_POST['wpa_passphrase']) > 63) {
+
+  if ($_POST['wpa'] !== 'none' &&
+      (strlen($_POST['wpa_passphrase']) < 8 || strlen($_POST['wpa_passphrase']) > 63)) {
     $status->addMessage('WPA passphrase must be between 8 and 63 characters', 'danger');
     $good_input = false;
   }
+
+  if (isset($_POST['hiddenSSID'])) {
+    if (!is_int((int)$_POST['hiddenSSID'])) {
+      $status->addMessage('Parameter hiddenSSID not a number.', 'danger');
+      $good_input = false;
+    } elseif ((int)$_POST['hiddenSSID'] < 0 || (int)$_POST['hiddenSSID'] >= 3) {
+      $status->addMessage('Parameter hiddenSSID contains invalid configuratie value.', 'danger');
+      $good_input = false;
+    } else {
+        $ignore_broadcast_ssid = $_POST['hiddenSSID'];
+    }
+  } else {
+      $ignore_broadcast_ssid = '0';
+  }
+
   if (! in_array($_POST['interface'], $interfaces)) {
     // The user is probably up to something here but it may also be a
     // genuine error.
-    $status->addMessage('Unknown interface '.$_POST['interface'], 'danger');
+    $status->addMessage('Unknown interface '.htmlspecialchars($_POST['interface'], ENT_QUOTES), 'danger');
     $good_input = false;
   }
-  if (strlen($_POST['country_code']) != 0 && strlen($_POST['country_code']) != 2) {
+
+  if (strlen($_POST['country_code']) !== 0 && strlen($_POST['country_code']) != 2) {
     $status->addMessage('Country code must be blank or two characters', 'danger');
     $good_input = false;
   }
@@ -506,18 +584,28 @@ function SaveHostAPDConfig($wpa_array, $enc_types, $modes, $interfaces, $status)
       fwrite($tmp_file, 'driver=nl80211'.PHP_EOL);
       fwrite($tmp_file, 'ctrl_interface='.RASPI_HOSTAPD_CTRL_INTERFACE.PHP_EOL);
       fwrite($tmp_file, 'ctrl_interface_group=0'.PHP_EOL);
-      fwrite($tmp_file, 'beacon_int=100'.PHP_EOL);
       fwrite($tmp_file, 'auth_algs=1'.PHP_EOL);
       fwrite($tmp_file, 'wpa_key_mgmt=WPA-PSK'.PHP_EOL);
+      fwrite($tmp_file, 'beacon_int=100'.PHP_EOL);
 
       fwrite($tmp_file, 'ssid='.$_POST['ssid'].PHP_EOL);
       fwrite($tmp_file, 'channel='.$_POST['channel'].PHP_EOL);
-      fwrite($tmp_file, 'hw_mode='.$_POST['hw_mode'].PHP_EOL);
+      if ($_POST['hw_mode'] === 'n') {
+        fwrite($tmp_file, 'hw_mode=g'.PHP_EOL);
+        fwrite($tmp_file, 'ieee80211n=1'.PHP_EOL);
+        // Enable basic Quality of service
+        fwrite($tmp_file, 'wme_enabled=1'.PHP_EOL);
+      } else {
+        fwrite($tmp_file, 'hw_mode='.$_POST['hw_mode'].PHP_EOL);
+        fwrite($tmp_file, 'ieee80211n=0'.PHP_EOL);
+      }
+
       fwrite($tmp_file, 'wpa_passphrase='.$_POST['wpa_passphrase'].PHP_EOL);
       fwrite($tmp_file, 'interface='.$_POST['interface'].PHP_EOL);
       fwrite($tmp_file, 'wpa='.$_POST['wpa'].PHP_EOL);
       fwrite($tmp_file, 'wpa_pairwise='.$_POST['wpa_pairwise'].PHP_EOL);
       fwrite($tmp_file, 'country_code='.$_POST['country_code'].PHP_EOL);
+      fwrite($tmp_file, 'ignore_broadcast_ssid='.$ignore_broadcast_ssid.PHP_EOL);
       fclose($tmp_file);
 
       system( "sudo cp /tmp/hostapddata " . RASPI_HOSTAPD_CONFIG, $return );
@@ -531,6 +619,7 @@ function SaveHostAPDConfig($wpa_array, $enc_types, $modes, $interfaces, $status)
       return false;
     }
   }
+
   return true;
 }
-?>
+
